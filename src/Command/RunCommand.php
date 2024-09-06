@@ -24,10 +24,10 @@ class RunCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $brain = new Brain(10);
+        $brain = new Brain(100);
         $consciousness = new Consciousness($brain, 5);
 
-        for ($i = 0; $i < 20; $i++) {
+        for ($i = 0; $i < 200; $i++) {
             $weights = array_map(
                 function ($weight) {
                     return $weight * rand(-1000, 1000) / 1000;
@@ -35,28 +35,29 @@ class RunCommand extends Command
                 array_fill(0, 5, 1.0)
             );
             $consciousness->input(new Packet($weights, null));
-        }
 
-        $this->hub->publish(
-            new Update(
-                'networkdata',
-                json_encode([
-                    'neurons' => array_values(array_map(function ($neuron) {
-                        return [
-                            'isOrigin' => empty($neuron->getWeights()),
-                            'hash' => $neuron->getHash()
-                        ];
-                    }, $brain->getNeurons())),
-                    'connections' => array_map(function ($connection) {
-                        return [
-                            'source' => $connection['hash1'],
-                            'target' => $connection['hash2'],
-                            'ttl' => $connection['ttl']
-                        ];
-                    }, $brain->getUniqueConnections())
-                ])
-            )
-        );
+            $this->hub->publish(
+                new Update(
+                    'networkdata',
+                    json_encode([
+                        'neurons' => array_values(array_map(function ($neuron) {
+                            return [
+                                'isOrigin' => empty($neuron->getWeights()),
+                                'hash' => $neuron->getHash()
+                            ];
+                        }, $brain->getNeurons())),
+                        'connections' => array_map(function ($connection) {
+                            return [
+                                'source' => $connection['hash1'],
+                                'target' => $connection['hash2'],
+                                'ttl' => $connection['ttl']
+                            ];
+                        }, $brain->getUniqueConnections())
+                    ])
+                )
+            );
+            time_nanosleep(0, 100000000);
+        }
 
         return Command::SUCCESS;
     }

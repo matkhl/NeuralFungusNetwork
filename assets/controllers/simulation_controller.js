@@ -1,13 +1,11 @@
 import { Controller } from '@hotwired/stimulus';
 import {
-    create,
     forceCenter,
     forceLink,
     forceManyBody,
     forceSimulation,
-    scaleOrdinal,
-    schemeCategory10,
-    select
+    select,
+    drag, forceCollide
 } from 'd3';
 
 export default class extends Controller {
@@ -23,119 +21,121 @@ export default class extends Controller {
     };
 
     connect() {
-        this.svg = this.createSimulation(this.networkData);
-        this.element.appendChild(this.svg);
+        this.svg = select(this.element.firstElementChild)
+            .attr("width", this.element.offsetWidth)
+            .attr("height", this.element.offsetHeight)
+            .attr("viewBox", [0, 0, this.element.offsetWidth, this.element.offsetHeight])
+            .attr("style", "max-width: 100%; height: auto;");
+
+        this.linkGroup = this.svg.append("g").attr("class", "links");
+        this.nodeGroup = this.svg.append("g").attr("class", "nodes");
+
+        this.simulation = forceSimulation()
+            .force("link", forceLink().id(d => d.hash).distance(20))
+            .force("charge", forceManyBody().strength(-60))
+            .force("center", forceCenter(this.element.offsetWidth / 2, this.element.offsetHeight / 2))
+            .force("collide", forceCollide(10))
+            .on("tick", () => this.ticked());
+
+        this.updateData();
 
         const eventSource = new EventSource(this.subscriptionUrlValue.replace(/^"|"$/g, ''));
         eventSource.onmessage = event => {
             if (this.element.childElementCount) {
-                const data = JSON.parse(event.data);
-                this.updateData(data);
-                this.networkData = data;
+                this.networkData = JSON.parse(event.data);
+                this.updateData();
             }
         }
     }
 
-    createSimulation(data) {
-        // Specify the dimensions of the chart.
-        const width = this.element.offsetWidth;
-        const height = this.element.offsetHeight;
+    updateData() {
+        const nodeInfo = new Map(this.simulation.nodes().map(d => [d.hash, { x: d.x, y: d.y, vx: d.vx, vy: d.vy }]));
 
-        // Specify the color scale.
-        this.color = scaleOrdinal(schemeCategory10);
+        // Update links
+        this.links = this.linkGroup
+            .selectAll("line")
+            .data(this.networkData.connections, d => `${d.source.hash}-${d.target.hash}`);
 
-        // The force simulation mutates links and nodes, so create a copy
-        // so that re-evaluating this cell produces the same result.
-        this.links = data.connections.map(d => ({...d}));
-        this.nodes = data.neurons.map(d => ({...d}));
+        this.links.exit().remove();
 
-        // Create a simulation with several forces.
-        this.simulation = forceSimulation(this.nodes)
-            .force("link", forceLink(this.links).id(d => d.hash))
-            .force("charge", forceManyBody())
-            .force("center", forceCenter(width / 2, height / 2))
-            .on("tick", () => this.ticked());
-
-        // Create the SVG container.
-        const svg = create("svg")
-            .attr("width", width)
-            .attr("height", height)
-            .attr("viewBox", [0, 0, width, height])
-            .attr("style", "max-width: 100%; height: auto;");
-
-        // Add a line for each link, and a circle for each node.
-        this.link = svg.append("g")
+        const enterLinks = this.links.enter().append("line")
             .attr("stroke", "#999")
-            .attr("stroke-opacity", 0.6)
-            .selectAll()
-            .data(this.links)
-            .join("line")
-            .attr("stroke-width", d => Math.sqrt(d.ttl));
+            .attr("stroke-opacity", 0.6);
 
-        this.node = svg.append("g")
-            .attr("stroke", "#fff")
-            .attr("stroke-width", 1.5)
-            .selectAll()
-            .data(this.nodes)
-            .join("circle")
+        this.links = this.links.merge(enterLinks)
+            .attr("stroke-width", d => Math.sqrt(d.ttl / 10));
+
+        // Update nodes
+        this.nodes = this.nodeGroup
+            .selectAll("circle")
+            .data(this.networkData.neurons, d => d.hash);
+
+        this.nodes.exit().remove();
+
+        const enterNodes = this.nodes.enter().append("circle")
             .attr("r", 5)
-            .attr("fill", d => this.color(parseInt(d.isOrigin)));
+            .call(this.drag(this.simulation));
 
-        return svg.node();
+        this.nodes = this.nodes.merge(enterNodes)
+            .attr("fill", d => d.isOrigin ? 'gray' : 'lightblue')
+            .attr("stroke", "#fff")
+            .attr("stroke-width", 1.5);
+
+        // Update simulation
+        this.simulation.nodes(this.networkData.neurons);
+        this.simulation.force("link").links(this.networkData.connections);
+
+        this.simulation.nodes().forEach(node => {
+            const info = nodeInfo.get(node.hash);
+            if (info) {
+                node.x = info.x;
+                node.y = info.y;
+                node.vx = info.vx;
+                node.vy = info.vy;
+            } else {
+                node.x = this.element.offsetWidth / 2;
+                node.y = this.element.offsetHeight / 2;
+                node.vx = 0;
+                node.vy = 0;
+            }
+        });
+
+        this.simulation.alpha(0.2).restart();
     }
 
     ticked() {
-        this.link
+        this.links
             .attr("x1", d => d.source.x)
             .attr("y1", d => d.source.y)
             .attr("x2", d => d.target.x)
             .attr("y2", d => d.target.y);
 
-        this.node
+        this.nodes
             .attr("cx", d => d.x)
             .attr("cy", d => d.y);
     }
 
-    updateData(data) {
-        // Update nodes
-        this.nodes = data.neurons.map(d => ({...d}));
+    drag(simulation) {
+        function dragstarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
 
-        // Update links
-        this.links = data.connections.map(d => ({...d}));
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
 
-        // Update the simulation with new nodes and links
-        this.simulation.nodes(this.nodes);
-        this.simulation.force("link").links(this.links);
+        function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
 
-        // Update the visual elements
-        this.updateVisuals();
-
-        // Reheat the simulation
-        this.simulation.alpha(1).restart();
-    }
-
-    updateVisuals() {
-        this.link = select(this.svg).select("g").selectAll("line")
-            .data(this.links, d => `${d.source.hash}-${d.target.hash}`)
-            .join(
-                enter => enter.append("line")
-                    .attr("stroke", "#999")
-                    .attr("stroke-opacity", 0.6)
-                    .attr("stroke-width", d => Math.sqrt(d.ttl)),
-                update => update.attr("stroke-width", d => Math.sqrt(d.ttl)),
-                exit => exit.remove()
-            );
-
-        this.node = select(this.svg).selectAll("g:last-of-type").selectAll("circle")
-            .data(this.nodes, d => d.hash)
-            .join(
-                enter => enter.append("circle")
-                    .attr("r", 5)
-                    .attr("fill", d => this.color(parseInt(d.isOrigin)))
-                    .attr("stroke", "#fff")
-                    .attr("stroke-width", 1.5),
-                update => update.attr("fill", d => this.color(parseInt(d.isOrigin))),
-                exit => exit.remove()
-            );
+        return drag()
+            .on("start", dragstarted)
+            .on("drag", dragged)
+            .on("end", dragended);
     }
 }
