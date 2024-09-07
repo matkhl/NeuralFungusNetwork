@@ -6,6 +6,8 @@ class Brain
 {
     private int $time;
 
+    private int $connectionLifetime;
+
     private Neuron $origin;
 
     /**
@@ -19,13 +21,14 @@ class Brain
     private array $neurons = [];
 
     public function __construct(
-        private readonly int $connectionLifetime
+        int $connectionLifetime
     )
     {
         $this->origin = new Neuron([], null);
         $this->neurons[$this->origin->getHash()] = $this->origin;
 
         $this->time = 0;
+        $this->connectionLifetime = $connectionLifetime;
     }
 
     public function increaseTime(): self
@@ -34,6 +37,12 @@ class Brain
         $this->removeExpiredConnections();
         $this->removeOrphanedNeurons();
 
+        return $this;
+    }
+
+    public function setConnectionLifetime(int $connectionLifetime): self
+    {
+        $this->connectionLifetime = $connectionLifetime;
         return $this;
     }
 
@@ -122,6 +131,10 @@ class Brain
 
     private function addConnection(Neuron $neuron1, Neuron $neuron2): void
     {
+        if ($neuron1 === $neuron2) {
+            return;
+        }
+
         $neuron1Hash = $neuron1->getHash();
         $neuron2Hash = $neuron2->getHash();
 
@@ -152,15 +165,14 @@ class Brain
         }
 
         $neuronHash = $neuron->getHash();
-
         if (!array_key_exists($neuronHash, $this->neurons)) {
             $this->neurons[$neuronHash] = $neuron;
+        }
 
-            $this->addConnection($neuron, $connector);
+        $this->addConnection($neuron, $connector);
 
-            if ($connectToOrigin) {
-                $this->addConnection($neuron, $this->getOrigin());
-            }
+        if ($connectToOrigin) {
+            $this->addConnection($neuron, $this->getOrigin());
         }
 
         return $this;

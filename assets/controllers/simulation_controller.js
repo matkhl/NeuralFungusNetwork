@@ -5,7 +5,8 @@ import {
     forceManyBody,
     forceSimulation,
     select,
-    drag, forceCollide
+    drag,
+    forceCollide, count
 } from 'd3';
 
 export default class extends Controller {
@@ -15,7 +16,11 @@ export default class extends Controller {
 
     networkData = {
         neurons: [
-            {hash: '40cd750bba9870f18aada2478b24840a', isOrigin: true}
+            {
+                hash: '40cd750bba9870f18aada2478b24840a',
+                isOrigin: true,
+                shortTtl: 0.0
+            }
         ],
         connections: []
     };
@@ -31,10 +36,10 @@ export default class extends Controller {
         this.nodeGroup = this.svg.append("g").attr("class", "nodes");
 
         this.simulation = forceSimulation()
-            .force("link", forceLink().id(d => d.hash).distance(20))
-            .force("charge", forceManyBody().strength(-60))
+            .force("link", forceLink().id(d => d.hash).distance(1).strength(0.5))
+            .force("charge", forceManyBody().strength(-10))
             .force("center", forceCenter(this.element.offsetWidth / 2, this.element.offsetHeight / 2))
-            .force("collide", forceCollide(10))
+            .force("collide", forceCollide(d => d.isOrigin ? 30 : 5))
             .on("tick", () => this.ticked());
 
         this.updateData();
@@ -63,7 +68,7 @@ export default class extends Controller {
             .attr("stroke-opacity", 0.6);
 
         this.links = this.links.merge(enterLinks)
-            .attr("stroke-width", d => Math.sqrt(d.ttl / 10));
+            .attr("stroke-width", d => Math.sqrt(d.ttl * 10));
 
         // Update nodes
         this.nodes = this.nodeGroup
@@ -76,8 +81,11 @@ export default class extends Controller {
             .attr("r", 5)
             .call(this.drag(this.simulation));
 
+        enterNodes.append("title")
+            .text(d => d.value ?? 'origin');
+
         this.nodes = this.nodes.merge(enterNodes)
-            .attr("fill", d => d.isOrigin ? 'gray' : 'lightblue')
+            .attr("fill", d => d.isOrigin ? 'black' : this.rgbToHex(100 + 155 * d.shortTtl, 100 - 30 * d.shortTtl, 155 - 85 * d.shortTtl))
             .attr("stroke", "#fff")
             .attr("stroke-width", 1.5);
 
@@ -100,7 +108,7 @@ export default class extends Controller {
             }
         });
 
-        this.simulation.alpha(0.2).restart();
+        this.simulation.alpha(0.1).restart();
     }
 
     ticked() {
@@ -137,5 +145,9 @@ export default class extends Controller {
             .on("start", dragstarted)
             .on("drag", dragged)
             .on("end", dragended);
+    }
+
+    rgbToHex(r, g, b) {
+        return "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1);
     }
 }

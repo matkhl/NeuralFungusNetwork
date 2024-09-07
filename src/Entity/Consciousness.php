@@ -28,12 +28,18 @@ class Consciousness
 
         $newNeuron = new Neuron($packet->getWeights(), $packet->getValue());
 
-        if ($newNeuron->getHash() != $this->getCurrentNeuron()->getHash()) {
-            $this->brain->addNeuron($newNeuron, $this->getCurrentNeuron(), $this->isClosestToOrigin($packet));
-            $this->advanceNeuron($newNeuron);
-        }
+        $this->brain->addNeuron($newNeuron, $this->getCurrentNeuron(), $this->isClosestToOrigin($packet));
+        $this->advanceNeuron($newNeuron);
 
         return $this;
+    }
+
+    /**
+     * @return array<Neuron>
+     */
+    public function getPath(): array
+    {
+        return $this->path;
     }
 
     public function getCurrentNeuron(): Neuron
